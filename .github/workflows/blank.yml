@@ -146,8 +146,8 @@ jobs:
       - build
       - unit-test
       - load-test
-    if: |
-      github.ref_type == 'tag'
+    # if: |
+    #   github.ref_type == 'tag'
     environment:
       name: prod
     steps:
@@ -176,7 +176,7 @@ jobs:
       - load-test
       - tag
     if: |
-      github.ref_type == 'tag' &&
+      # github.ref_type == 'tag' &&
       needs.build.result == 'success' &&
       needs.unit-test.result == 'success' &&
       needs.tag.result == 'success'
