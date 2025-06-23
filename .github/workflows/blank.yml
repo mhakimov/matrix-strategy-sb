@@ -152,23 +152,19 @@ jobs:
       name: prod
     steps:
 
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        role-to-assume: arn:aws:iam::${{ secrets.AWS_PROD_ACCOUNT_ID }}:role/marat-app-prod-${{ env.region }}-image-builder-role
-        aws-region: ${{ env.region }}
+    - name: Debug AWS role and region
+      run: |
+        echo "Role to Assume: arn:aws:iam::${{ secrets.AWS_PROD_ACCOUNT_ID }:role/marat-app-prod-${{ env.region }}-image-builder-role"
+        echo "AWS Region: ${{ env.region }}"
 
-    - name: Login to Amazon ECR
-      id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v2
 
     - name: Push image to registry
       id: push-image
       env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         ECR_REPOSITORY: marat-app-api
         IMAGE_TAG: ${{ github.sha }}
       run: |
+        echo "role arn:aws:iam::${{ secrets.AWS_PROD_ACCOUNT_ID }}:role/marat-app-prod-${{ env.region }}-image-builder-role"
         echo "Loading image..."
         echo "Tagging image..."
         echo "Pushing image..."
