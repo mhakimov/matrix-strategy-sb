@@ -100,13 +100,6 @@ jobs:
       run: |
         echo "Running tests..."
 
-
-    - name: Pytest coverage comment
-      uses: MishaKav/pytest-coverage-comment@main
-      with:
-        pytest-xml-coverage-path: ./tmp/coverage.xml
-        junitxml-path: ./tmp/pytest.xml
-
     - name: Stop database
       if: always()
       run: |
