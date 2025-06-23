@@ -154,9 +154,8 @@ jobs:
 
     - name: Debug AWS role and region
       run: |
-        echo "Role to Assume: arn:aws:iam::${{ secrets.AWS_PROD_ACCOUNT_ID }:role/marat-app-prod-${{ env.region }}-image-builder-role"
-        echo "AWS Region: ${{ env.region }}"
-
+        REGION="${{ env.region }}"
+        echo "region is $REGION"  
 
     - name: Push image to registry
       id: push-image
@@ -164,7 +163,6 @@ jobs:
         ECR_REPOSITORY: marat-app-api
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        echo "role arn:aws:iam::${{ secrets.AWS_PROD_ACCOUNT_ID }}:role/marat-app-prod-${{ env.region }}-image-builder-role"
         echo "Loading image..."
         echo "Tagging image..."
         echo "Pushing image..."
