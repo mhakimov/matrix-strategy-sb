@@ -151,11 +151,6 @@ jobs:
     environment:
       name: prod
     steps:
-    - name: Download artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: ${{ env.ECR_REPOSITORY }}
-        path: /tmp
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
