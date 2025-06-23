@@ -1,0 +1,272 @@
+---
+name: BTD marat app API
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+    tags:
+      - v*
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  WORKING_DIR: ./
+  ECS_CLUSTER: marat-app-prod-cluster
+  ECS_SERVICE: marat-app-prod-api-service
+  ECR_REPOSITORY: marat-app-api
+  region: eu-west-2
+
+jobs:
+  paths-filter:
+    runs-on: ubuntu-latest
+    if: |
+      github.ref_type == 'tag'
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      embeddings: ${{ steps.filter.outputs.embeddings }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch all tags and history
+
+    - name: Get previous tag
+      id: prev_tag
+      run: |
+        TAGS=$(git tag --sort=-creatordate)
+        CURRENT_TAG="${GITHUB_REF#refs/tags/}"
+        PREV_TAG=$(echo "$TAGS" | grep -v "^$CURRENT_TAG$" | head -n 1)
+        echo "current_tag=$CURRENT_TAG" >> $GITHUB_OUTPUT
+        echo "prev_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+
+    - uses: dorny/paths-filter@v3
+      id: filter
+      with:
+        base: ${{ steps.prev_tag.outputs.prev_tag }}
+        ref: ${{ steps.prev_tag.outputs.current_tag }}
+        filters: |
+          embeddings:
+            - 'data/**'
+
+
+  build:
+    name: Build image
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Build, Tag, and Push the Image to Amazon ECR
+      id: build-image
+      run: |
+        echo "Building image..."
+        cd $WORKING_DIR
+        echo "Saving image as an artifact..."
+
+
+  unit-test:
+    name: Unit Test image
+    runs-on: ubuntu-latest
+    needs:
+      - build
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+
+    - name: Start database
+      run: |
+        echo "Starting database..."
+
+    - name: Wait for database
+      run: |
+        echo "Waiting for database to be ready..."
+
+    - name: Run database migrations (using entrypoint)
+      run: |
+        echo "Running database migrations..."
+        echo "Initialising Mock user"
+
+    - name: Run tests (using entrypoint)
+      run: |
+        echo "Running tests..."
+
+
+    - name: Pytest coverage comment
+      uses: MishaKav/pytest-coverage-comment@main
+      with:
+        pytest-xml-coverage-path: ./tmp/coverage.xml
+        junitxml-path: ./tmp/pytest.xml
+
+    - name: Stop database
+      if: always()
+      run: |
+        echo "Stopping database..."
+
+  load-test:
+    name: Load Test image
+    runs-on: ubuntu-latest
+    needs:
+      - build
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Start database
+      run: |
+        echo "Starting database..."
+
+    - name: Wait for database
+      run: |
+        echo "Waiting for database to be ready..."
+
+    - name: Run database migrations (using entrypoint)
+      run: |
+        echo "Running database migrations..."
+        echo "Initialising Mock user"
+
+    - name: Run load tests (using entrypoint)
+      run: |
+        echo "Running load tests..."
+
+    - name: Stop database
+      if: always()
+      run: |
+        echo "Stopping database..."
+
+  tag:
+    name: Tag and push image
+    runs-on: ubuntu-latest
+    needs:
+      - build
+      - unit-test
+      - load-test
+    if: |
+      github.ref_type == 'tag'
+    environment:
+      name: prod
+    steps:
+    - name: Download artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ env.ECR_REPOSITORY }}
+        path: /tmp
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::${{ secrets.AWS_PROD_ACCOUNT_ID }}:role/marat-app-prod-${{ env.region }}-image-builder-role
+        aws-region: ${{ env.region }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Push image to registry
+      id: push-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: marat-app-api
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        echo "Loading image..."
+        echo "Tagging image..."
+        echo "Pushing image..."
+
+  deploy:
+    name: Deploy to Amazon ECS
+    runs-on: ubuntu-latest
+    needs:
+      - build
+      - unit-test
+      - load-test
+      - tag
+    if: |
+      github.ref_type == 'tag' &&
+      needs.build.result == 'success' &&
+      needs.unit-test.result == 'success' &&
+      needs.tag.result == 'success'
+    strategy:
+      matrix:
+        environment: [prod, staging]
+    environment:
+      name: ${{ matrix.environment }}
+      url: ${{ matrix.environment == 'prod' && 'https://marat-app.net' || 'https://staging.marat-app.net' }}
+    steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::${{ secrets.AWS_PROD_ACCOUNT_ID }}:role/marat-app-${{ matrix.environment }}-${{ env.region }}-image-builder-role
+        aws-region: ${{ env.region }}
+
+    - name: Deploy new image to ECS service
+      env:
+        ECS_CLUSTER: ${{ matrix.environment == 'prod' && 'marat-app-prod-cluster' || 'marat-app-staging-cluster' }}
+        ECS_SERVICE: ${{ matrix.environment == 'prod' && 'marat-app-prod-api-service' || 'marat-app-staging-api-service' }}
+      run: |
+        echo "ecs-cluster is $ECS_CLUSTER"
+        echo "ecs-service is $ECS_SERVICE"
+
+        echo "waiting for service to stabilize..."
+
+  release:
+    name: Create Release
+    needs:
+      - build
+      - unit-test
+      - load-test
+      - tag
+      - deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    if: |
+      github.ref_type == 'tag'
+    steps:
+      - uses: ncipollo/release-action@v1
+        with:
+          draft: false
+          prerelease: false
+          generateReleaseNotes: true
+          tag: ${{ github.ref_name }}
+
+  update-embeddings:
+    name: Upd Em s
+    runs-on: ubuntu-latest
+    needs:
+      - paths-filter
+      - build
+      - tag
+      - deploy
+    if: |
+      github.ref_type == 'tag' &&
+      needs.paths-filter.outputs.embeddings == 'true'
+    steps:
+      - name: Conf AWS cr
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_PROD_ACCOUNT_ID }}:role/marat-app-prod-${{ env.region }}-image-builder-role
+          aws-region: ${{ env.region }}
+
+      - name: Update embeddings
+        run: |
+          
+          echo "ecs-cluster is $ECS_CLUSTER"
+          echo "ecs-service is $ECS_SERVICE"
+          echo "env.ecs_cluster is $ECS_CLUSTER"
+          echo "running task..."
+
+          echo "waiting for task to finish..."
+
