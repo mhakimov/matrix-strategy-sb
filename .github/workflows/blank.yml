@@ -186,11 +186,6 @@ jobs:
       name: ${{ matrix.environment }}
       url: ${{ matrix.environment == 'prod' && 'https://marat-app.net' || 'https://staging.marat-app.net' }}
     steps:
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        role-to-assume: arn:aws:iam::${{ secrets.AWS_PROD_ACCOUNT_ID }}:role/marat-app-${{ matrix.environment }}-${{ env.region }}-image-builder-role
-        aws-region: ${{ env.region }}
 
     - name: Deploy new image to ECS service
       env:
@@ -235,11 +230,6 @@ jobs:
       github.ref_type == 'tag' &&
       needs.paths-filter.outputs.embeddings == 'true'
     steps:
-      - name: Conf AWS cr
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_PROD_ACCOUNT_ID }}:role/marat-app-prod-${{ env.region }}-image-builder-role
-          aws-region: ${{ env.region }}
 
       - name: Update embeddings
         run: |
