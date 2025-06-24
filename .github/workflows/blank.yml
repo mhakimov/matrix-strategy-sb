@@ -218,6 +218,7 @@ jobs:
           prerelease: false
           generateReleaseNotes: true
           tag: ${{ github.ref_name }}
+          allowUpdates: true
 
   update-embeddings:
     name: Upd Em s
